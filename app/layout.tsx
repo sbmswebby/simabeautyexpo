@@ -6,14 +6,14 @@ import Footer from "@/components/sbms/Footer";
 import { EventPopup } from "@/components/shared/EventPopup";
 
 export const metadata: Metadata = {
-  title: "SBMS Academy",
+  title: "Sima Beauty Expo",
   description: "South Indian Bridal Makeover Studio",
   icons: {
     icon: "/images/sbms_logo.svg",
   },
   metadataBase: new URL("https://sbmsacademy.in"),
   openGraph: {
-    title: "SBMS Academy",
+    title: "Sima Beauty expo",
     description: "South Indian Bridal Makeover Studio",
     url: "https://sbmsacademy.in",
     siteName: "SBMS Academy",
@@ -61,8 +61,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-base-100 text-base-content">
         <AuthProvider>
-          {/* Navbar - full width, no padding constraints */}
-          <Navbar />
+
           
           {/* Main content with padding */}
           <main className="pt-16 lg:pt-20 p-4 sm:p-6 lg:p-10">
@@ -70,7 +69,6 @@ export default function RootLayout({
             {children}
           </main>
 
-          <Footer />
         </AuthProvider>
       </body>
     </html>
