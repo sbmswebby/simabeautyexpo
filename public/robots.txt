@@ -1,0 +1,18 @@
+# *
+User-agent: *
+Allow: /
+
+# *
+User-agent: *
+Disallow: /api/*
+Disallow: /admin
+Disallow: /login
+Disallow: /signup
+Disallow: /reset-password
+Disallow: /profile
+
+# Host
+Host: https://sbmsacademy.in
+
+# Sitemaps
+Sitemap: https://sbmsacademy.in/sitemap.xml
