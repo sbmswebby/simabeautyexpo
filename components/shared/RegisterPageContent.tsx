@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef, JSX } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import useEventRegistration from "@/utils/useEventRegistration";
@@ -8,6 +8,8 @@ import { GenerationOrchestrator } from "@/lib/certificate_and_id/generationOrche
 import { DownloadService } from "@/lib/certificate_and_id/downloadService";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import { City, State } from "country-state-city";
+import type { ICity } from "country-state-city";
 
 // ------------------------------------------------------
 // Type Definitions
@@ -17,6 +19,8 @@ interface SessionRow {
   name: string;
   image_url: string | null;
 }
+type SubmitState = "idle" | "processing" | "success";
+
 
 interface Session {
   id: string;
@@ -31,9 +35,34 @@ interface DownloadItem {
 }
 
 export default function RegisterPageContent(): JSX.Element {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const eventId: string = searchParams.get("eventId") || "";
   const urlSessionId: string | null = searchParams.get("sessionId");
+
+const [citySuggestions, setCitySuggestions] = useState<ICity[]>([]);
+const [showCityDropdown, setShowCityDropdown] = useState(false);
+const indianCities = City.getCitiesOfCountry("IN") || [];
+
+useEffect(() => {
+  setCitySuggestions(indianCities);
+}, []);
+const handleCityChange = (value: string) => {
+  setCity(value);
+
+  if (!value.trim()) {
+    setShowCityDropdown(false);
+    return;
+  }
+
+const filtered = indianCities
+  .filter((c) =>
+    c.name.toLowerCase().startsWith(value.toLowerCase())
+  )
+  .slice(0, 10);
+
+setCitySuggestions(filtered);
+setShowCityDropdown(true);}
 
   // ------------------------------------------------------
   // Form State
@@ -53,10 +82,18 @@ export default function RegisterPageContent(): JSX.Element {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
+  const selectedSession: Session | undefined = sessions.find(
+  (session) => session.id === sessionId
+);
 
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [sessionModalOpen, setSessionModalOpen] = useState<boolean>(false);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+
+  // ------------------------------------------------------
+// Submit Button UI State
+// ------------------------------------------------------
+const [submitState, setSubmitState] = useState<SubmitState>("idle");
 
   // ------------------------------------------------------
   // Fetch sessions and their images
@@ -89,77 +126,176 @@ export default function RegisterPageContent(): JSX.Element {
 
     fetchSessions();
   }, [eventId]);
+  useEffect(() => {
+    if (!urlSessionId || sessions.length === 0) return;
 
-  // ------------------------------------------------------
-  // Form Submission Handler
-  // ------------------------------------------------------
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
-    e.preventDefault();
-    setMessage(null);
+    const exists = sessions.some((s) => s.id === urlSessionId);
+    if (exists) {
+      setSessionId(urlSessionId);
+    }
+  }, [urlSessionId, sessions]);
+// ------------------------------------------------------
+// Form Submission Handler (FULLY INSTRUMENTED)
+// ------------------------------------------------------
+const handleSubmit = async (
+  e: React.FormEvent<HTMLFormElement>
+): Promise<void> => {
+  e.preventDefault();
 
-    if (!name.trim() || !whatsapp.trim() || !parlor.trim() || !city.trim() || !photo) {
-      setMessage({
-        type: "error",
-        text: "Please fill in all required fields and upload a photo.",
-      });
-      return;
+  console.group("🧾 [handleSubmit] START");
+  console.log("Initial submitState:", submitState);
+
+  setMessage(null);
+
+  // Prevent double submit
+  if (submitState !== "idle") {
+    console.warn("⛔ Submit blocked — submitState:", submitState);
+    console.groupEnd();
+    return;
+  }
+
+  // Basic validation
+  console.log("🔍 Validating form fields", {
+    name,
+    whatsapp,
+    parlor,
+    city,
+    hasPhoto: Boolean(photo),
+    sessionId,
+  });
+
+  if (!name.trim() || !whatsapp.trim() || !parlor.trim() || !city.trim() || !photo) {
+    console.error("❌ Validation failed");
+    setMessage({
+      type: "error",
+      text: "Please fill in all required fields and upload a photo.",
+    });
+    console.groupEnd();
+    return;
+  }
+
+  try {
+    // UI → processing
+    console.log("🔄 Setting submitState → processing");
+    setSubmitState("processing");
+
+    console.group("📤 Calling handleManualSubmit");
+    console.log("Payload:", {
+      name,
+      whatsapp,
+      organisation: parlor,
+      user_selected_session_id: sessionId,
+      profession: profession || undefined,
+      city,
+      hasPhoto: Boolean(photo),
+    });
+
+    const registration = await handleManualSubmit({
+      name,
+      whatsapp,
+      organisation: parlor,
+      user_selected_session_id: sessionId,
+      profession: profession || undefined,
+      photo,
+      city,
+    });
+
+    console.groupEnd(); // handleManualSubmit
+
+    console.log("📥 handleManualSubmit returned:", registration);
+
+    if (!registration?.registrationId) {
+      console.error("❌ No registrationId returned");
+      throw new Error("Registration failed");
     }
 
-    try {
-      const registration = await handleManualSubmit({
-        name,
-        whatsapp,
-        organisation: parlor,
-        user_selected_session_id: sessionId,
-        profession: profession || undefined,
-        photo,
-        city,
-      });
+    console.log("✅ Registration created:", registration.registrationId);
 
-      if (registration?.registrationId) {
+    // ✅ Registration SUCCESS — update UI immediately
+    console.log("🎉 Setting submitState → success");
+    setSubmitState("success");
+    setMessage({ type: "success", text: "Registered successfully!" });
+
+    // --------------------------------------------------
+    // 🎟️ OPTIONAL: certificate / ID generation (background)
+    // --------------------------------------------------
+    console.group("🧩 Background generation task started");
+
+    void (async (): Promise<void> => {
+      try {
+        console.log("⚙️ Calling GenerationOrchestrator.generateBoth", {
+          registrationId: registration.registrationId,
+        });
+
         const result = await GenerationOrchestrator.generateBoth(
           registration.registrationId,
           false
         );
 
-        if (result.success && (result.certificateUrl || result.idCardUrl)) {
-          const baseName = name.replace(/\s+/g, "_");
-          const newDownloads: DownloadItem[] = [];
+        console.log("📄 Generation result:", result);
 
-          if (result.certificateUrl) {
-            newDownloads.push({
-              url: result.certificateUrl,
-              label: "Certificate",
-              filename: `${baseName}_Certificate.jpg`,
-            });
-          }
+        // Nothing generated → valid state
+        if (!result.success) {
+          console.warn("⚠️ Generation skipped — no templates found");
+          console.groupEnd();
+          return;
+        }
 
-          if (result.idCardUrl) {
-            newDownloads.push({
-              url: result.idCardUrl,
-              label: "ID Card",
-              filename: `${baseName}_ID_Card.jpg`,
-            });
-          }
+        const baseName: string = name.replace(/\s+/g, "_");
+        const newDownloads: DownloadItem[] = [];
 
-          setDownloads(newDownloads);
-          setModalOpen(true);
-
-          setMessage({ type: "success", text: "Registered successfully!" });
-        } else {
-          setMessage({
-            type: "error",
-            text: `File generation failed: ${result.error || "Unknown error"}`,
+        if (result.certificateUrl) {
+          console.log("📜 Certificate URL found");
+          newDownloads.push({
+            url: result.certificateUrl,
+            label: "Certificate",
+            filename: `${baseName}_Certificate.jpg`,
           });
         }
-      } else {
-        setMessage({ type: "success", text: "Registered successfully!" });
+
+        if (result.idCardUrl) {
+          console.log("🪪 ID Card URL found");
+          newDownloads.push({
+            url: result.idCardUrl,
+            label: "ID Card",
+            filename: `${baseName}_ID_Card.jpg`,
+          });
+        }
+
+        console.log("📦 Downloads prepared:", newDownloads);
+
+        if (newDownloads.length > 0) {
+          console.log("🪟 Opening download modal");
+          setDownloads(newDownloads);
+          setModalOpen(true);
+        } else {
+          console.warn("⚠️ No downloadable files produced");
+        }
+
+        console.groupEnd();
+      } catch (generationError: unknown) {
+        console.error("❌ Background generation error", generationError);
+        console.groupEnd();
       }
-    } catch (err) {
-      const errorMessage: string = err instanceof Error ? err.message : "Unknown error";
-      setMessage({ type: "error", text: `Registration failed: ${errorMessage}` });
-    }
-  };
+    })();
+  } catch (err: unknown) {
+    console.error("❌ handleSubmit caught error:", err);
+
+    const errorMessage: string =
+      err instanceof Error ? err.message : "Unknown error";
+
+    console.log("🔁 Resetting submitState → idle");
+    setSubmitState("idle");
+
+    setMessage({
+      type: "error",
+      text: `Registration failed: ${errorMessage}`,
+    });
+  } finally {
+    console.groupEnd(); // handleSubmit
+  }
+};
+
 
   // ------------------------------------------------------
   // Handle file download
@@ -186,10 +322,20 @@ const SessionPickerModal = (): JSX.Element => {
       return root;
     })();
 
-  const handleSelectSession = (id: string) => {
-    setSessionId(id);
-    setSessionModalOpen(false);
-  };
+const handleSelectSession = (id: string): void => {
+  setSessionId(id);
+
+  const params = new URLSearchParams(searchParams.toString());
+  params.set("sessionId", id);
+
+  router.replace(`?${params.toString()}`, {
+    scroll: false,
+  });
+
+  setSessionModalOpen(false);
+};
+
+
 
   return createPortal(
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999] p-4">
@@ -316,125 +462,254 @@ const SessionPickerModal = (): JSX.Element => {
       <div className="w-full max-w-md bg-white p-6 rounded shadow">
         <h2 className="text-2xl font-bold text-center mb-4">Registration</h2>
         {/* Session Selector — ALWAYS visible now */}
-        <label className=" ">Selected Session *</label>
-        <div className="session-selector grid grid-cols-10 items-center ">
-          <div className="col-span-8">
-            <h3 >
-              {sessionId
-                ? sessions.find((s) => s.id === sessionId)?.name
-                : "No session selected"}
-            </h3>
-          </div>
+ <label className="block text-sm sm:text-base">Selected Session *</label>
 
-          <a
-            type="button"
-            onClick={() => setSessionModalOpen(true)}
-            className="col-span-2 session-btn text-md"
-          >
-            Change
-          </a>
+
+<div className="session-selector flex flex-col gap-3 w-full">
+  {/* Top row: image + text */}
+  <div className="flex items-center gap-3 min-w-0">
+    {/* Thumbnail */}
+    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-gray-700 shrink-0">
+      {selectedSession?.image_url ? (
+        <Image
+          src={selectedSession.image_url}
+          alt={selectedSession.name}
+          width={64}
+          height={64}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-[9px] sm:text-xs text-gray-400">
+          No Image
         </div>
+      )}
+    </div>
 
-        {message && (
-          <div
-            className={`p-3 mb-4 rounded ${
-              message.type === "success"
-                ? "bg-green-100 text-green-800"
-                : "bg-red-100 text-red-800"
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
+    {/* Text */}
+    <div className="min-w-0">
+      <p className="truncate">
+        {selectedSession?.name ?? "No session selected"}
+      </p>
+    </div>
+  </div>
+
+  {/* Button below */}
+  <button
+    type="button"
+    onClick={() => setSessionModalOpen(true)}
+    className="session-btn text-xs sm:text-sm w-full"
+  >
+    Change
+  </button>
+</div>
+
+
+
+
+
+
         <div className="h-5"></div>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Full Name */}
-          <div>
-            <label className="block mb-1">Full Name *</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border p-2 rounded"
-            />
+          {/*Full name and whatsapp number */}
+          <div className="grid lg:grid-cols-2 sm:grid-cols-1 gap-4">
+            {/* Full Name */}
+            <div>
+              <label className="block mb-1">Full Name <span className="text-red-600">*</span></label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full border p-2 rounded"
+              />
+            </div>
+
+            {/* WhatsApp */}
+            <div className="form-group">
+              <label>WhatsApp Number <span className="text-red-600">*</span></label>
+
+              <input
+                type="tel"
+                required
+                inputMode="tel"
+                placeholder="Ex: 9892948576"
+                value={whatsapp}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const rawValue: string = e.target.value
+
+                  /* Step 1: Remove everything except digits and + */
+                  let cleanedValue: string = rawValue.replace(/[^0-9+]/g, "")
+
+
+
+                  /* Step 3: Enforce max E.164 length (15 digits + +) */
+                  if (cleanedValue.length > 16) {
+                    cleanedValue = cleanedValue.slice(0, 16)
+                  }
+
+                  setWhatsapp(cleanedValue)
+
+                  /* Step 4: Live E.164 validation */
+                  const e164Regex: RegExp = /^\+[1-9]\d{7,14}$/
+
+                  if (cleanedValue.length > 0 && !e164Regex.test(cleanedValue)) {
+                    console.log("Enter a valid E.164 number (e.g. +14155552671)")
+                  } else {
+                    console.log("valid number enterd")
+                  }
+                }}
+              />
+
+            </div>
           </div>
 
-          {/* WhatsApp */}
-          <div>
-            <label className="block mb-1">WhatsApp Number *</label>
-            <input
-              type="tel"
-              required
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              className="w-full border p-2 rounded"
-            />
-          </div>
+          {/*Organisation and Profession*/}
+          <div className="grid lg:grid-cols-2 md:grid-cols-2 sm:grid-cols-1 gap-4">
+            {/* Organisation */}
+            <div className=" col-span-1">
+              <label className="block mb-1">Organization/Company/Academy Name <span className="text-red-600">*</span></label>
+              <input
+                type="text"
+                required
+                value={parlor}
+                onChange={(e) => setParlor(e.target.value)}
+                className="w-full border p-2 rounded"
+              />
+            </div>
 
-          {/* Parlor */}
-          <div>
-            <label className="block mb-1">Organization / Parlor / Company/ Academy Name *</label>
-            <input
-              type="text"
-              required
-              value={parlor}
-              onChange={(e) => setParlor(e.target.value)}
-              className="w-full border p-2 rounded"
-            />
-          </div>
-
-          {/* Profession */}
-          <div>
-            <label className="block mb-1">Profession / Job *</label>
-            <input
-              type="text"
-              required
-              value={profession}
-              onChange={(e) => setProfession(e.target.value)}
-              className="w-full border p-2 rounded"
-            />
+            {/* Profession */}
+            <div className="col-span-1">
+              <label className="block mb-1">Profession / Job <span className="text-red-600">*</span></label>
+              <input
+                type="text"
+                required
+                value={profession}
+                onChange={(e) => setProfession(e.target.value)}
+                className="w-full border p-2 rounded"
+              />
+            </div>
           </div>
 
           {/* City */}
-          <div>
-            <label className="block mb-1">City *</label>
-            <input
-              type="text"
-              required
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className="w-full border p-2 rounded"
-            />
-          </div>
+<div className="relative">
+  <label className="block mb-1">City <span className="text-red-600">*</span></label>
 
-          {/* Photo */}
-          <div>
-            <label className="block mb-1">
-              Upload Photo *{" "}
-              <span className="font-black text-red-600">
-                Portrait photo with clear face (like passport size photo)
-              </span>
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              required
-              onChange={(e) => setPhoto(e.target.files?.[0] || null)}
-              className="w-full border p-2 rounded"
-            />
-          </div>
+  <input
+    type="text"
+    required
+    value={city}
+    onChange={(e) => handleCityChange(e.target.value)}
+    onFocus={() => city && setShowCityDropdown(true)}
+    onBlur={() => setTimeout(() => setShowCityDropdown(false), 150)}
+    placeholder="Start typing your city..."
+    className="w-full border p-2 rounded"
+  />
+
+  {showCityDropdown && citySuggestions.length > 0 && (
+<ul className="
+  absolute z-50 w-full mt-1 max-h-48 overflow-y-auto rounded-lg
+  bg-gray-900 border border-gray-700 shadow-xl
+">
+  {citySuggestions.map((c) => {
+  const stateName =
+    State.getStateByCodeAndCountry(c.stateCode, "IN")?.name || "";
+
+  return (
+    <li
+      key={`${c.name}-${c.stateCode}`}
+      onMouseDown={() => {
+  const stateName =
+    State.getStateByCodeAndCountry(c.stateCode, "IN")?.name || "";
+
+  const displayValue = stateName
+    ? `${c.name} - ${stateName}`
+    : c.name;
+
+  setCity(displayValue); // ✅ city-state goes into input
+  setShowCityDropdown(false);
+}}
+
+      className="
+        px-3 py-2 cursor-pointer text-white
+        hover:bg-gray-700 transition-colors
+      "
+    >
+      <span className="font-medium">{c.name}</span>
+      {stateName && (
+        <span className="text-gray-400"> — {stateName}</span>
+      )}
+    </li>
+  );
+})}
+
+
+</ul>
+
+  )}
+</div>
+
+
+<div className="form-group photo-upload">
+  {/* Hidden native file input */}
+  <input
+    id="photo-upload"
+    type="file"
+    accept="image/*"
+    required
+    className="photo-input"
+    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+      const file: File | null = e.target.files ? e.target.files[0] : null
+      setPhoto(file)
+    }}
+  />
+
+  {/* Button + text row */}
+  <div className="photo-upload-row">
+    {/* Styled label acting as button */}
+    <label htmlFor="photo-upload" className="photo-upload-btn">
+      {photo ? "Change Photo" : "Upload Photo"}
+    </label>
+
+    {/* Right-side text */}
+    <div className="photo-upload-text">
+      {photo ? (
+        <span className="photo-file">
+          File Chosen: {photo.name}
+        </span>
+      ) : (
+        <span className="photo-helper">
+          Note: Potrait photo with clear face 
+        </span>
+      )}
+    </div>
+  </div>
+</div>
+
+
+
 
 
 
           {/* Submit */}
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            {isProcessing ? "Processing..." : "Register"}
-          </button>
+<button
+  type="submit"
+  disabled={submitState === "processing" || submitState === "success"}
+  className={`
+    w-full py-2 rounded transition-all
+    ${
+      submitState === "idle"
+        ? "bg-blue-600 hover:bg-blue-700 text-white"
+        : submitState === "processing"
+        ? "bg-gray-400 text-white cursor-not-allowed"
+        : "bg-green-600 text-white"
+    }
+  `}
+>
+  {submitState === "idle" && "Register"}
+  {submitState === "processing" && "Processing... Please wait"}
+  {submitState === "success" && "Registered Successfully ✓"}
+</button>
+
         </form>
       </div>
 
