@@ -133,59 +133,7 @@ export default function SimaExpoPage() {
           66% { transform: translate(-30px, 30px) rotate(240deg); }
         }
 
-        nav {
-          position: fixed;
-          top: 0;
-          width: 100%;
-          padding: 20px 50px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          z-index: 1000;
-          backdrop-filter: blur(20px);
-          background: rgba(10, 10, 10, 0.7);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
 
-        .logo {
-          font-family: 'Playfair Display', serif;
-          font-size: 2rem;
-          font-weight: 900;
-          background: linear-gradient(135deg, var(--primary-gold), var(--secondary-teal));
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          letter-spacing: 2px;
-        }
-
-        .nav-links {
-          display: flex;
-          gap: 40px;
-          list-style: none;
-        }
-
-        .nav-links a {
-          color: var(--light-text);
-          text-decoration: none;
-          font-weight: 500;
-          position: relative;
-          transition: color 0.3s;
-        }
-
-        .nav-links a::after {
-          content: '';
-          position: absolute;
-          bottom: -5px;
-          left: 0;
-          width: 0;
-          height: 2px;
-          background: linear-gradient(90deg, var(--primary-gold), var(--secondary-teal));
-          transition: width 0.3s;
-        }
-
-        .nav-links a:hover::after {
-          width: 100%;
-        }
 
         .hero {
           position: relative;
