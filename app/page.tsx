@@ -485,7 +485,7 @@ export default function SimaExpoPage() {
       {/* Hero Section */}
       <section id="home" className="hero">
         <div className="hero-content">
-          <h1>SIMA EXPO 2025</h1>
+          <h1>SIMA EXPO 2026</h1>
           <p className="subtitle">Where Beauty Meets Lifestyle Excellence</p>
           <div className="cta-buttons">
             <a href="#events" className="btn btn-primary">Explore Events</a>

@@ -18,6 +18,22 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
+  openGraph: {
+    title: "SIMA beauty Expo",
+    description: "South Indian Makeover Awards",
+    url: "https://simabeautyexpo.com/",
+    siteName: "SIMA beauty Expo",
+    images: [
+      {
+        url: "https://res.cloudinary.com/dz2cmusyt/image/upload/v1767693699/events/hcdn1bco1bnhpiocyzfv.jpg",
+        width: 1200,
+        height: 630,
+        alt: "SIMA beauty Expo",
+      },
+    ],
+    type: "website",
+    locale: "en_US",
+  },
 };
 
 
