@@ -489,7 +489,7 @@ export default function SimaExpoPage() {
           <p className="subtitle">Where Beauty Meets Lifestyle Excellence</p>
           <div className="cta-buttons">
             <a href="#events" className="btn btn-primary">Explore Events</a>
-            <a href="#pageant" className="btn btn-secondary">Join Pageant</a>
+            <Link href="/bbn_directors" className="btn btn-secondary">View BBN Directors</Link>
           </div>
         </div>
       </section>
